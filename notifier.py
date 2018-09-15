@@ -9,10 +9,11 @@ from bs4 import BeautifulSoup
 _username = ""
 _password = ""
 
+#Logs in the user and returns the url of the page to which the user is redirected 
 def login(username, password):
     LOGIN_URL = 'https://sso-prod.sun.ac.za/cas/login?TARGET=http%3A%2F%2Ft2000-05.sun.ac.za%2FEksamenUitslae%2FEksUitslae.jsp%3FpLang%3D1'
 
-    session = requests.session()
+    session = requests.session()    #Create a new session
     login = session.get(LOGIN_URL)
 
     login_html = lxml.html.fromstring(login.text)
@@ -25,15 +26,15 @@ def login(username, password):
 
     while login_not_complete:
 
-        _username = raw_input("Student Number: ")
+        _username = raw_input("Student Number: ") #Get username and password from user
         _password = raw_input("Password: ")
 
-        form['username'] = _username
+        form['username'] = _username    #set the form username and password to the ones given by the user
         form['password'] = _password
 
-        response = session.post(LOGIN_URL, data=form)
+        response = session.post(LOGIN_URL, data=form)   #Attempt login with given credentials
 
-        if(response.url != LOGIN_URL):
+        if(response.url != LOGIN_URL):  #If the user is redirected to the marks page, login was successful
             print "Login Successful\n"
             login_not_complete = False
         else:
@@ -41,14 +42,16 @@ def login(username, password):
 
     return response.url
 
+#Returns the number of non-empty elements in the table
 def get_mark_count(table):
     i = 0
-    for tr in table.find_all("tr")[2:]:
-        for td in tr.find_all("td")[2:5]:
+    for tr in table.find_all("tr")[2:]: #loop through each row in the table which contains marks
+        for td in tr.find_all("td")[2:5]:   #loop through each column in the table which contains marks
             if td.text != "":
                 i = i + 1
     return i
 
+#Returns the given table as a string
 def get_marks_table(table):
     marks = ""
     for tr in table.find_all("tr")[2:]:
@@ -57,39 +60,43 @@ def get_marks_table(table):
         marks = marks + "\n"
     return marks
 
+#Sends email from users student email account to themselve to notify them
 def send_notification(table):
-    emailaddr = _username + "@sun.ac.za"
+    emailaddr = _username + "@sun.ac.za" #creates email address from the username
 
-    msg = MIMEMultipart()
+    msg = MIMEMultipart()   #Create new message
     msg['From'] = emailaddr
     msg['To'] = emailaddr
     msg['Subject'] = "New Marks Out!"
 
-    body = get_marks_table(table)
+    body = get_marks_table(table) #Get table as a string and set the body of the message to it
     msg.attach(MIMEText(body, 'plain'))
 
-    server = smtplib.SMTP('smtp.office365.com', 587)
+    server = smtplib.SMTP('smtp.office365.com', 587) #Connect to server
     server.starttls()
-    server.login(emailaddr, _password)
+    server.login(emailaddr, _password) #Login as the user
 
-    server.sendmail(emailaddr, emailaddr, msg.as_string())
-    print body
+    server.sendmail(emailaddr, emailaddr, msg.as_string())  #Send the email
+    print body  #Output the message sent
     print "Mail sent\n"
-    server.quit()
+    server.quit() #Disconnect from the server
 
-url = login(_username, _password)
+def main():
+    url = login(_username, _password) #Login as the user
+    previous_count = 0 #Initialize the intial number of released marks to zero
 
-previous_count = 0
+    while True:
+        response = requests.get(url)
+        soup = BeautifulSoup(response.text, "lxml") #Get soup from the page
 
-while True:
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, "lxml")
+        table = soup.find_all('table')[1]   #Find the first table in the page
+        current_count = get_mark_count(table)   #Get the current number of released marks
 
-    table = soup.find_all('table')[1]
-    current_count = get_mark_count(table)
+        if current_count > previous_count:
+            previous_count = current_count
+            send_notification(table)
 
-    if current_count > previous_count:
-        previous_count = current_count
-        send_notification(table)
+        time.sleep(60)  #Sleep the program for 60 seconds
 
-    time.sleep(60)
+if __name__ == "__main__":
+    main()
